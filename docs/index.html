@@ -5,20 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>Repost Studio</title>
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#08090c">
-<link rel="icon" href="/icon.svg">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Repost Studio">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
+<!-- ══ first-run gate (hosted only) ══ -->
+<div class="gate" id="gate" hidden>
+  <div class="gate-card">
+    <div class="mark">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.5 9.6l4.6 2.4-4.6 2.4z"/></svg>
+    </div>
+    <h1 class="wm">Repost<span>studio</span></h1>
+    <p>This device is not connected yet. Paste an access token to let it queue renders and edit channels.</p>
+    <div class="form">
+      <label class="fld">
+        <span class="lb">Access token</span>
+        <input type="text" id="gateToken" placeholder="github_pat_…" spellcheck="false" autocomplete="off">
+        <span class="hint">Stored in this browser only. Never sent anywhere except GitHub.</span>
+      </label>
+      <button class="btn pri blk" id="btnGateSave">Connect</button>
+    </div>
+  </div>
+</div>
+
 <div class="shell">
 
-  <!-- ════════════════ sidebar ════════════════ -->
+  <!-- ══ sidebar ══ -->
   <aside class="sb" id="sb">
     <div class="sb-head">
       <div class="brand">
@@ -27,7 +46,7 @@
         </div>
         <div>
           <h1 class="wm">Repost<span>studio</span></h1>
-          <div class="sub" id="sbSub">tiktok &rarr; facebook</div>
+          <div class="sub">tiktok &rarr; facebook</div>
         </div>
       </div>
     </div>
@@ -36,13 +55,11 @@
       <div class="sb-lbl">Workspace</div>
       <button class="nav on" data-goto="queue">
         <svg class="ic" viewBox="0 0 24 24"><path d="M4 6h9M4 12h16M4 18h6"/><circle cx="17.5" cy="6" r="2.3"/></svg>
-        <span class="nm">Render queue</span>
-        <span class="mini" id="navQueueN"></span>
+        <span class="nm">Render queue</span><span class="mini" id="navQueueN"></span>
       </button>
       <button class="nav" data-goto="channels">
         <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg>
-        <span class="nm">Channels</span>
-        <span class="mini" id="navChanN"></span>
+        <span class="nm">Channels</span><span class="mini" id="navChanN"></span>
       </button>
       <button class="nav" data-goto="setup">
         <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.7 5.7l1.6 1.6M16.7 16.7l1.6 1.6M18.3 5.7l-1.6 1.6M7.3 16.7l-1.6 1.6"/></svg>
@@ -53,14 +70,11 @@
       <div id="sbChannels"></div>
     </div>
 
-    <div class="sb-foot">
-      <span class="pip g" id="sbPip"></span>
-      <span id="sbFoot">idle</span>
-    </div>
+    <div class="sb-foot"><span class="pip g" id="sbPip"></span><span id="sbFoot">…</span></div>
   </aside>
   <div class="scrim2" id="scrim2"></div>
 
-  <!-- ════════════════ main ════════════════ -->
+  <!-- ══ main ══ -->
   <div class="main">
     <div class="tbar" id="tbar">
       <button class="btn hamb" id="hamb" aria-label="Menu">
@@ -70,53 +84,63 @@
       <div class="grow"></div>
       <span class="pill"><span class="beat" id="beat"></span><span id="beatTxt">idle</span></span>
       <button class="btn pri" id="btnNewJob">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-        <span>Render</span>
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Render</span>
       </button>
     </div>
 
     <div class="page">
-
-      <!-- ─────────── queue ─────────── -->
       <section class="view" data-view="queue">
         <div class="stats" id="stats"></div>
         <div class="h">Renders <span class="n" id="jobsN"></span></div>
         <div class="cards" id="jobs"></div>
       </section>
 
-      <!-- ─────────── channels ─────────── -->
       <section class="view" data-view="channels" hidden>
-        <div class="h">
-          Channels
-          <div class="grow"></div>
+        <div class="h">Channels<div class="grow"></div>
           <button class="btn" id="btnNewChannel">
-            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add channel</span>
-          </button>
+            <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Add channel</span></button>
         </div>
         <p class="lede">Each channel pairs one TikTok creator with one Facebook page and carries its own edit preset. Speed is randomised per render around the base value.</p>
         <div class="cards" id="channels"></div>
       </section>
 
-      <!-- ─────────── setup ─────────── -->
       <section class="view" data-view="setup" hidden>
-        <div class="h">Machine</div>
+        <div class="h">Run mode</div>
+        <div class="panel">
+          <h3 id="modeName">…</h3>
+          <p id="modeWhere"></p>
+          <p class="fine">Opened on this PC at <code>localhost:8791</code> the app renders here on the GPU. Opened anywhere else it drives GitHub Actions instead — same channels, same presets.</p>
+        </div>
+
+        <div class="h">Status</div>
         <div class="panel"><dl class="kv" id="machine"></dl></div>
 
-        <div class="h">Sources</div>
-        <div class="panel">
+        <div class="h">Access</div>
+        <div class="panel" id="tokenBox" hidden>
           <div class="form">
             <label class="fld">
-              <span class="lb">TikTok cookies file</span>
-              <input type="text" id="setCookies" placeholder="C:\path\to\cookies.txt" spellcheck="false">
-              <span class="hint">TikTok throttles repeated anonymous downloads. Export cookies.txt from a logged-in browser and point here.</span>
+              <span class="lb">GitHub access token</span>
+              <input type="text" id="setToken" placeholder="github_pat_…" spellcheck="false" autocomplete="off">
+              <span class="hint">Needs <b>Actions: read and write</b> and <b>Contents: read and write</b> on this one repository. Stored in this browser only.</span>
             </label>
-            <label class="fld">
-              <span class="lb">Output folder</span>
-              <input type="text" id="setOutput" spellcheck="false">
-            </label>
-            <div>
-              <button class="btn pri" id="btnSaveSettings">Save changes</button>
-              <span class="ok-note" id="setSaved" hidden>Saved</span>
+            <button class="btn pri" id="btnSaveToken">Save token</button>
+          </div>
+        </div>
+
+        <div id="localOnly">
+          <div class="panel">
+            <div class="form">
+              <label class="fld">
+                <span class="lb">TikTok cookies file</span>
+                <input type="text" id="setCookies" placeholder="C:\path\to\cookies.txt" spellcheck="false">
+                <span class="hint">TikTok throttles repeated anonymous downloads. Export cookies.txt from a logged-in browser and point here.</span>
+              </label>
+              <label class="fld">
+                <span class="lb">Output folder</span>
+                <input type="text" id="setOutput" spellcheck="false">
+              </label>
+              <div><button class="btn pri" id="btnSaveSettings">Save changes</button>
+                <span class="ok-note" id="setSaved" hidden>Saved</span></div>
             </div>
           </div>
         </div>
@@ -124,24 +148,21 @@
         <div class="h">Publishing</div>
         <div class="panel warn">
           <h3>Facebook is not connected</h3>
-          <p>Finished renders wait in the queue as <b>ready</b> instead of being posted, so nothing goes out by accident.</p>
+          <p>Finished renders wait as <b>ready</b> instead of being posted, so nothing goes out by accident.</p>
           <p class="fine">The publishing interface is already in place — adding a page token is all that switches it on.</p>
         </div>
       </section>
-
     </div>
   </div>
 </div>
 
-<!-- ════════════════ modals ════════════════ -->
+<!-- ══ modals ══ -->
 <div class="scrim" id="scrim" hidden></div>
 
 <div class="modal" id="mChannel" hidden>
   <div class="grip"></div>
-  <div class="md-head">
-    <h3 id="mChannelTitle">New channel</h3>
-    <button class="md-x" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-  </div>
+  <div class="md-head"><h3 id="mChannelTitle">New channel</h3>
+    <button class="md-x" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="md-body">
     <div class="form">
       <label class="fld"><span class="lb">Channel name</span>
@@ -157,33 +178,20 @@
         <label class="fld"><span class="lb">Randomise &plusmn;</span>
           <input type="number" id="chJitter" step="0.01" min="0" max="0.1" value="0.02"></label>
       </div>
-      <label class="sw">
-        <input type="checkbox" id="chCaptions" checked>
-        <span class="trk"><span class="knb"></span></span>
-        <span class="sw-lb">Burn in captions</span>
-      </label>
-      <label class="fld"><span class="lb">Encoder</span>
-        <select id="chEncoder">
-          <option value="auto">Auto — GPU when available</option>
-          <option value="nvenc">NVENC (GPU)</option>
-          <option value="x264">x264 (CPU)</option>
-        </select></label>
+      <label class="sw"><input type="checkbox" id="chCaptions" checked>
+        <span class="trk"><span class="knb"></span></span><span class="sw-lb">Burn in captions</span></label>
       <label class="fld"><span class="lb">Posts per day</span>
         <input type="number" id="chPerDay" min="1" max="12" value="1"></label>
     </div>
   </div>
-  <div class="md-foot">
-    <button class="btn" data-close>Cancel</button>
-    <button class="btn pri" id="btnSaveChannel">Save channel</button>
-  </div>
+  <div class="md-foot"><button class="btn" data-close>Cancel</button>
+    <button class="btn pri" id="btnSaveChannel">Save channel</button></div>
 </div>
 
 <div class="modal" id="mJob" hidden>
   <div class="grip"></div>
-  <div class="md-head">
-    <h3>New render</h3>
-    <button class="md-x" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-  </div>
+  <div class="md-head"><h3>New render</h3>
+    <button class="md-x" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="md-body">
     <div class="form">
       <label class="fld"><span class="lb">Channel</span><select id="jobChannel"></select></label>
@@ -191,18 +199,14 @@
         <input type="text" id="jobUrl" placeholder="https://www.tiktok.com/@handle/video/…" spellcheck="false" autocomplete="off"></label>
     </div>
   </div>
-  <div class="md-foot">
-    <button class="btn" data-close>Cancel</button>
-    <button class="btn pri" id="btnQueueJob">Queue render</button>
-  </div>
+  <div class="md-foot"><button class="btn" data-close>Cancel</button>
+    <button class="btn pri" id="btnQueueJob">Queue render</button></div>
 </div>
 
 <div class="modal" id="mPreview" hidden>
   <div class="grip"></div>
-  <div class="md-head">
-    <h3 id="pvTitle">Render</h3>
-    <button class="md-x" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-  </div>
+  <div class="md-head"><h3 id="pvTitle">Render</h3>
+    <button class="md-x" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <div class="md-body">
     <div class="player"><video id="pvVideo" controls playsinline preload="metadata"></video></div>
     <dl class="kv" id="pvParams"></dl>
@@ -211,7 +215,6 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
-
-<script src="/app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

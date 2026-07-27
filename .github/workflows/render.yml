@@ -1,32 +1,53 @@
 name: Render video
 
+# Dispatched from the portal (docs/) via the Actions API, or by hand from the
+# Actions tab. The finished MP4 is published as a release asset so the portal
+# can play it straight from a phone without an access token, and a summary row
+# is appended to state/jobs.json which the portal reads over raw.githubusercontent.
+
 on:
   workflow_dispatch:
     inputs:
       url:
         description: "TikTok video URL"
         required: true
+      channel:
+        description: "Channel name (label only)"
+        required: false
+        default: "Render"
       speed:
-        description: "Base speed (default 1.1)"
+        description: "Base speed"
         required: false
         default: "1.1"
       jitter:
-        description: "Randomise speed by +/- this (0 = exact)"
+        description: "Randomise speed by +/-"
         required: false
         default: "0.02"
+      captions:
+        description: "Burn in captions"
+        required: false
+        default: "true"
       seed:
-        description: "Seed (blank = random each run)"
+        description: "Seed (blank = random)"
         required: false
         default: ""
-      preset:
-        description: "x264 preset"
-        required: false
-        default: "medium"
+
+run-name: "Render: ${{ inputs.channel }}"
+
+concurrency:
+  group: render
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
+    env:
+      TAG: renders
 
     steps:
       - uses: actions/checkout@v4
@@ -44,15 +65,11 @@ jobs:
           ffmpeg -version | head -1
 
       - name: Register bundled caption font
-        # fonts/OpenSans-Bold.ttf is committed, so the caption look is identical
-        # on a runner and on a Windows PC. Registering it with fontconfig lets
-        # libass resolve it by family name.
         run: |
           sudo apt-get install -y -qq fontconfig
           mkdir -p ~/.local/share/fonts
           cp fonts/*.ttf ~/.local/share/fonts/
           fc-cache -f >/dev/null
-          fc-list | grep -i "open sans" | head -3
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -64,6 +81,7 @@ jobs:
           key: whisper-small-v1
 
       - name: Render
+        id: render
         run: |
           SEED_ARG=""
           if [ -n "${{ inputs.seed }}" ]; then SEED_ARG="--seed ${{ inputs.seed }}"; fi
@@ -72,8 +90,83 @@ jobs:
             --out output.mp4 \
             --speed "${{ inputs.speed }}" \
             --jitter "${{ inputs.jitter }}" \
-            --preset "${{ inputs.preset }}" \
+            --preset medium \
             $SEED_ARG
+          ffmpeg -y -v error -ss 3 -i output.mp4 -frames:v 1 -vf "scale=270:-2" -q:v 4 thumb.jpg
+
+      - name: Name the asset
+        id: name
+        run: echo "base=render-${{ github.run_id }}" >> $GITHUB_OUTPUT
+
+      - name: Publish as a release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ steps.name.outputs.base }}
+        run: |
+          # One rolling release holds every render, so the portal has a stable
+          # public URL per file and never needs a token to play one back.
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Renders" \
+              --notes "Rendered videos. Each asset is one render." --latest=false
+          cp output.mp4 "$BASE.mp4"
+          cp thumb.jpg  "$BASE.jpg"
+          gh release upload "$TAG" "$BASE.mp4" "$BASE.jpg" --clobber
+
+      - name: Append to state/jobs.json
+        if: always()
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          SRC_URL: ${{ inputs.url }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, subprocess
+          p = pathlib.Path("state/jobs.json")
+          p.parent.mkdir(exist_ok=True)
+          data = json.loads(p.read_text()) if p.exists() else {"jobs": []}
+
+          run_id = os.environ["GITHUB_RUN_ID"]
+          base   = f"render-{run_id}"
+          tag    = os.environ["TAG"]
+          repo   = os.environ["GITHUB_REPOSITORY"]
+          dl     = f"https://github.com/{repo}/releases/download/{tag}/"
+
+          ok = pathlib.Path("output.mp4").exists()
+          params = {}
+          if pathlib.Path("output.mp4.params.json").exists():
+              params = json.loads(pathlib.Path("output.mp4.params.json").read_text())
+
+          entry = {
+            "id": run_id,
+            "run_id": run_id,
+            "channel": os.environ.get("CHANNEL") or "Render",
+            "url": os.environ.get("SRC_URL", ""),
+            "status": "ready" if ok else "failed",
+            "duration": params.get("output_duration", 0),
+            "size_mb": params.get("output_size_mb", 0),
+            "params": params,
+            "created": subprocess.run(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"],
+                                      capture_output=True, text=True).stdout.strip(),
+            "video": dl + base + ".mp4" if ok else "",
+            "thumb": dl + base + ".jpg" if ok else "",
+            "error": "" if ok else "Render failed - open the run log for details",
+          }
+          # newest last; the portal reverses. Keep the file from growing forever.
+          data["jobs"] = (data["jobs"] + [entry])[-200:]
+          p.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name  "repost-studio[bot]"
+          git config user.email "actions@github.com"
+          git add state/jobs.json
+          git diff --cached --quiet || git commit -m "portal: render ${{ github.run_id }} [skip ci]"
+          # another render may have pushed while this one was encoding
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin main && git push origin HEAD:main && break
+            sleep 5
+          done
 
       - name: Summary
         if: always()
@@ -84,9 +177,8 @@ jobs:
             cat output.mp4.params.json >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
-          ls -lh output.mp4 || true
 
-      - name: Upload result
+      - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:

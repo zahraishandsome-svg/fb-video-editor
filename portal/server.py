@@ -154,7 +154,9 @@ def _nvenc_cached():
 
 
 # ----------------------------- static -----------------------------
-STATIC = os.path.join(HERE, "static")
+# The same files GitHub Pages publishes. One source, two run modes: served here
+# the app renders locally on the GPU, served from Pages it drives Actions.
+STATIC = os.path.join(os.path.dirname(HERE), "docs")
 app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
 
 
