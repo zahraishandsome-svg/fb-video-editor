@@ -8,3 +8,6 @@ __pycache__/
 portal/portal.db
 portal/renders/
 portal/__pycache__/
+
+# the PWA icons are part of the site, not render output
+!docs/*.png
