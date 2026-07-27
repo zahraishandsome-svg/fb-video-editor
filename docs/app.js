@@ -302,12 +302,50 @@ addEventListener("scroll", () => $("#tbar").classList.toggle("stuck", scrollY > 
 
 /* ══════════════════════════ modals ═══════════════════════════ */
 let openM = null;
+let blobUrl = null;
+
 function show(id) { openM = $(id); $("#scrim").hidden = false; openM.hidden = false; }
 function close() {
   if (!openM) return;
   const v = $("#pvVideo");
   if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+  $("#pvNote").hidden = true;
   openM.hidden = true; $("#scrim").hidden = true; openM = null;
+}
+
+/** Play a finished render.
+ *
+ *  Release assets come back as application/octet-stream whatever the file is
+ *  called. Chrome sniffs the container and plays anyway; iOS Safari refuses and
+ *  shows a struck-through play button. So: try the URL directly, and if the
+ *  element errors, pull the bytes down and hand them back as a typed blob,
+ *  which sidesteps the server's header entirely. */
+function playInto(v, url) {
+  if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+  const note = $("#pvNote");
+  note.hidden = true;
+
+  v.onerror = async () => {
+    v.onerror = null;
+    note.textContent = "Loading video…";
+    note.hidden = false;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`download failed (${r.status})`);
+      const buf = await r.arrayBuffer();
+      blobUrl = URL.createObjectURL(new Blob([buf], { type: "video/mp4" }));
+      v.src = blobUrl;
+      v.load();
+      note.hidden = true;
+    } catch (e) {
+      note.textContent = "Could not load the video here — use Save to open it.";
+      note.hidden = false;
+    }
+  };
+
+  v.src = url;
+  v.load();
 }
 $("#scrim").addEventListener("click", close);
 document.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) close(); });
@@ -468,7 +506,7 @@ document.addEventListener("click", async (e) => {
     const j = state.jobs.find((x) => String(x.id) === b.dataset.preview);
     if (!j) return;
     $("#pvTitle").textContent = j.channel || "Render";
-    $("#pvVideo").src = j.video;
+    playInto($("#pvVideo"), j.video);
     const p = j.params || {};
     $("#pvParams").innerHTML = [
       ["Length", fmtDur(j.duration)],
