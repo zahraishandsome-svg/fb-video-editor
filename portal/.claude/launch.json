@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "portal",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["C:\\Users\\Zahid\\FBVideoEditor\\portal\\server.py"],
+      "port": 8791
+    }
+  ]
+}

@@ -5,3 +5,6 @@ work/
 *.ass
 *.params.json
 __pycache__/
+portal/portal.db
+portal/renders/
+portal/__pycache__/

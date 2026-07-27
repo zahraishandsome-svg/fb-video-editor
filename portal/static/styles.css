@@ -1,0 +1,449 @@
+/* ============================================================
+   Repost Studio — mobile-first console
+   Ground is near-black; a single broadcast amber carries every
+   "this is live / this is done" signal. Nothing else is coloured.
+   ============================================================ */
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/Manrope.ttf") format("truetype-variations");
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono.ttf") format("truetype-variations");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+:root {
+  --void:   #07080B;
+  --panel:  #0F1218;
+  --raise:  #161A22;
+  --edge:   #212734;
+  --edge-2: #2C3444;
+  --text:   #EEF1F6;
+  --dim:    #7E8799;
+  --faint:  #545C6D;
+
+  --gold:   #D9A441;
+  --gold-d: #8A6717;
+  --on-gold:#0B0A06;
+  --ok:     #4FBF8B;
+  --bad:    #E0675B;
+  --wait:   #6C8FD6;
+
+  --r:      16px;
+  --r-sm:   10px;
+  --pad:    16px;
+  --ui:     "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:   "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px rgba(0,0,0,.45);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --void:   #F2F3F6;
+    --panel:  #FFFFFF;
+    --raise:  #F5F6F9;
+    --edge:   #E1E4EB;
+    --edge-2: #CFD4DE;
+    --text:   #12151C;
+    --dim:    #616A7C;
+    --faint:  #8892A3;
+    --gold:   #97690F;
+    --gold-d: #E4C98A;
+    --on-gold:#FFFFFF;
+    --ok:     #1E8A5C;
+    --bad:    #C2413A;
+    --wait:   #3B62A8;
+    --shadow: 0 1px 2px rgba(16,20,28,.05), 0 8px 24px rgba(16,20,28,.07);
+  }
+}
+:root[data-theme="dark"] {
+  --void:#07080B; --panel:#0F1218; --raise:#161A22; --edge:#212734; --edge-2:#2C3444;
+  --text:#EEF1F6; --dim:#7E8799; --faint:#545C6D;
+  --gold:#D9A441; --gold-d:#8A6717; --on-gold:#0B0A06; --ok:#4FBF8B; --bad:#E0675B; --wait:#6C8FD6;
+  --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 10px 30px rgba(0,0,0,.45);
+}
+:root[data-theme="light"] {
+  --void:#F2F3F6; --panel:#FFFFFF; --raise:#F5F6F9; --edge:#E1E4EB; --edge-2:#CFD4DE;
+  --text:#12151C; --dim:#616A7C; --faint:#8892A3;
+  --gold:#97690F; --gold-d:#E4C98A; --on-gold:#FFFFFF; --ok:#1E8A5C; --bad:#C2413A; --wait:#3B62A8;
+  --shadow: 0 1px 2px rgba(16,20,28,.05), 0 8px 24px rgba(16,20,28,.07);
+}
+
+* { box-sizing: border-box; }
+
+/* Any `display` declaration outruns the UA stylesheet's [hidden] rule, and
+   almost every block here sets one. Restore the attribute's meaning globally
+   so toggling `hidden` in JS actually hides things. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+}
+
+/* ------------------------------ topbar ------------------------------ */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top)) var(--pad) 10px;
+  background: color-mix(in srgb, var(--void) 86%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--edge);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.mark {
+  width: 11px; height: 11px; border-radius: 3px;
+  background: var(--gold);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 18%, transparent);
+}
+.brand-name { font-weight: 700; letter-spacing: -.015em; font-size: 16px; }
+.tally {
+  font-family: var(--mono);
+  font-size: 11px; letter-spacing: .06em;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.tally b { color: var(--gold); font-weight: 600; }
+
+/* ------------------------------ layout ------------------------------ */
+main { max-width: 720px; margin: 0 auto; }
+.view {
+  padding: 18px var(--pad) 8px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.stack { display: flex; flex-direction: column; gap: 12px; }
+
+.section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+h2 { font-size: 19px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+h3 { margin: 0; }
+.lede { margin: -8px 0 0; color: var(--dim); font-size: 14px; max-width: 52ch; }
+
+/* ------------------------------ stats ------------------------------- */
+.statgrid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+}
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  padding: 11px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.stat b {
+  font-family: var(--mono); font-size: 20px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.stat span {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint);
+}
+.stat.on b { color: var(--gold); }
+
+/* ------------------------------ cards ------------------------------- */
+.card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.card.pad { padding: var(--pad); display: flex; flex-direction: column; gap: 14px; }
+.card-title { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
+
+/* the render bar: a hairline across the card's top edge, like an NLE */
+.card .bar {
+  position: absolute; inset: 0 auto auto 0; height: 2px;
+  background: var(--gold); width: 0;
+  transition: width .5s ease;
+}
+
+.job { display: flex; gap: 12px; padding: 12px; align-items: stretch; }
+.thumb {
+  flex: 0 0 62px; width: 62px; aspect-ratio: 9/16;
+  border-radius: 8px; background: var(--raise);
+  border: 1px solid var(--edge);
+  object-fit: cover; display: block;
+}
+.thumb.empty {
+  display: grid; place-items: center;
+  color: var(--faint); font-family: var(--mono); font-size: 9px;
+  letter-spacing: .08em;
+}
+.job-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.job-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.job-name {
+  font-weight: 650; font-size: 14.5px; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-url {
+  font-family: var(--mono); font-size: 11px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-meta {
+  display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center;
+  font-family: var(--mono); font-size: 11px; color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.job-actions { display: flex; gap: 8px; margin-top: 2px; }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 3px 7px; border-radius: 5px;
+  border: 1px solid var(--edge-2); color: var(--dim);
+  white-space: nowrap;
+}
+.chip::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.chip.running { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 40%, transparent); }
+.chip.running::before { animation: pulse 1.4s ease-in-out infinite; }
+.chip.ready   { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.chip.posted  { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.chip.failed  { color: var(--bad);  border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.chip.queued  { color: var(--wait); border-color: color-mix(in srgb, var(--wait) 40%, transparent); }
+
+@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+@media (prefers-reduced-motion: reduce) {
+  .chip.running::before { animation: none }
+  .card .bar { transition: none }
+  .sheet { transition: none !important }
+}
+
+.err {
+  font-family: var(--mono); font-size: 11px; color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 9%, transparent);
+  border-radius: 6px; padding: 6px 8px;
+  overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+}
+
+/* --------------------------- channel card --------------------------- */
+.chan { padding: var(--pad); display: flex; flex-direction: column; gap: 12px; }
+.chan-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.chan-name { font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
+.route {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-family: var(--mono); font-size: 11.5px; color: var(--dim);
+}
+.route .arrow { color: var(--gold); }
+.route .off { color: var(--faint); }
+.preset { display: flex; flex-wrap: wrap; gap: 6px; }
+.tagv {
+  font-family: var(--mono); font-size: 10.5px;
+  padding: 3px 7px; border-radius: 5px;
+  background: var(--raise); border: 1px solid var(--edge);
+  color: var(--dim);
+}
+.tagv b { color: var(--text); font-weight: 600; }
+
+/* ------------------------------ forms ------------------------------- */
+.field { display: flex; flex-direction: column; gap: 6px; }
+.lbl {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--faint); font-weight: 600;
+}
+.help { font-size: 12px; color: var(--faint); line-height: 1.45; }
+input[type=text], input[type=number], select {
+  width: 100%;
+  font: inherit; font-size: 15px;
+  color: var(--text);
+  background: var(--raise);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  padding: 11px 12px;
+  appearance: none;
+}
+input[type=text], input[type=number] { font-family: var(--mono); font-size: 13.5px; }
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--gold); outline-offset: 2px;
+}
+select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%),
+                    linear-gradient(135deg, var(--dim) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.switch { display: flex; align-items: center; gap: 11px; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.track {
+  width: 44px; height: 26px; border-radius: 13px; flex: 0 0 44px;
+  background: var(--raise); border: 1px solid var(--edge);
+  position: relative; transition: background .18s, border-color .18s;
+}
+.knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--faint); transition: transform .18s, background .18s;
+}
+.switch input:checked + .track { background: color-mix(in srgb, var(--gold) 25%, transparent); border-color: var(--gold); }
+.switch input:checked + .track .knob { transform: translateX(18px); background: var(--gold); }
+.switch input:focus-visible + .track { outline: 2px solid var(--gold); outline-offset: 2px; }
+.switch-label { font-size: 14.5px; }
+
+/* ----------------------------- buttons ------------------------------ */
+.btn {
+  font: inherit; font-weight: 650; font-size: 14.5px;
+  border-radius: var(--r-sm);
+  padding: 11px 16px;
+  border: 1px solid var(--edge-2);
+  background: var(--raise);
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.btn:active { transform: translateY(1px); }
+/* --on-gold is set per theme: the gold is bright in dark mode and deep in
+   light mode, so the label has to flip with it, not with the button. */
+.btn.primary {
+  background: var(--gold); border-color: var(--gold);
+  color: var(--on-gold);
+}
+.btn.ghost { background: transparent; }
+.btn.sm { padding: 7px 12px; font-size: 13px; }
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); background: transparent; }
+.btn:disabled { opacity: .45; cursor: default; }
+
+/* ------------------------------ kv list ----------------------------- */
+.kv { margin: 0; display: flex; flex-direction: column; }
+.kv > div {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
+  padding: 8px 0; border-bottom: 1px solid var(--edge);
+  font-size: 13.5px;
+}
+.kv > div:last-child { border-bottom: 0; }
+.kv dt { color: var(--dim); }
+.kv dd {
+  margin: 0; font-family: var(--mono); font-size: 12.5px;
+  font-variant-numeric: tabular-nums; text-align: right;
+  word-break: break-all;
+}
+
+.notice { border-color: color-mix(in srgb, var(--gold) 30%, var(--edge)); }
+.notice p { margin: 0; font-size: 13.5px; color: var(--dim); }
+.notice .fine { font-size: 12.5px; color: var(--faint); }
+.saved { margin: 0; font-size: 13px; color: var(--ok); font-family: var(--mono); }
+
+.empty-state {
+  text-align: center; padding: 40px 20px; color: var(--faint);
+  border: 1px dashed var(--edge-2); border-radius: var(--r);
+}
+.empty-state p { margin: 0 0 4px; font-size: 14px; }
+.empty-state small { font-size: 12.5px; }
+
+/* ------------------------------ tabbar ------------------------------ */
+.tabbar {
+  position: fixed; z-index: 30;
+  left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  background: color-mix(in srgb, var(--void) 92%, transparent);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--edge);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.tab {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 0 8px;
+  color: var(--faint);
+  font-family: var(--ui); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .02em;
+  transition: color .15s;
+}
+.tab svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tab.is-on { color: var(--gold); }
+
+/* ------------------------------ sheets ------------------------------ */
+.scrim {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(2px);
+}
+.sheet {
+  position: fixed; z-index: 50;
+  left: 0; right: 0; bottom: 0;
+  max-height: 88vh;
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border-top: 1px solid var(--edge-2);
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -12px 40px rgba(0,0,0,.5);
+  padding-bottom: env(safe-area-inset-bottom);
+  transform: translateY(0);
+  transition: transform .26s cubic-bezier(.32,.72,0,1);
+}
+.sheet[hidden] { display: none; }
+.sheet.closing { transform: translateY(100%); }
+.grip {
+  width: 38px; height: 4px; border-radius: 2px;
+  background: var(--edge-2);
+  margin: 10px auto 2px;
+  flex: 0 0 auto;
+}
+.sheet-title {
+  font-size: 17px; font-weight: 700; letter-spacing: -.02em;
+  padding: 6px var(--pad) 0;
+}
+.sheet-body {
+  padding: 14px var(--pad);
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+.sheet-actions {
+  display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px;
+  padding: 12px var(--pad) 18px;
+  border-top: 1px solid var(--edge);
+}
+.player { background: #000; border-radius: 12px; overflow: hidden; line-height: 0; }
+.player video { width: 100%; height: auto; max-height: 52vh; display: block; }
+
+.toast {
+  position: fixed; z-index: 60;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  background: var(--raise);
+  border: 1px solid var(--edge-2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 13.5px;
+  box-shadow: var(--shadow);
+  max-width: calc(100vw - 32px);
+}
+.toast.bad { border-color: color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); }
+
+/* --------------------------- wider screens -------------------------- */
+@media (min-width: 760px) {
+  body { padding-bottom: 0; padding-left: 200px; }
+  .tabbar {
+    top: 0; right: auto; width: 200px;
+    grid-template-columns: 1fr;
+    align-content: start; gap: 4px;
+    border-top: 0; border-right: 1px solid var(--edge);
+    padding: calc(64px + env(safe-area-inset-top)) 12px 0;
+  }
+  .tab { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 11px 14px; border-radius: var(--r-sm); font-size: 14px; }
+  .tab.is-on { background: var(--panel); }
+  .topbar { padding-left: calc(200px + var(--pad)); }
+  .sheet { left: 50%; right: auto; transform: translateX(-50%); bottom: 24px; width: 480px; border-radius: 18px; border: 1px solid var(--edge-2); }
+  .sheet.closing { transform: translateX(-50%) translateY(120%); }
+  .statgrid { gap: 12px; }
+}

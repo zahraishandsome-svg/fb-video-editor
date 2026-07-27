@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07080B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Repost Studio</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span class="brand-name">Repost Studio</span>
+  </div>
+  <div class="tally" id="tally"></div>
+</header>
+
+<main>
+  <!-- ============================ QUEUE ============================ -->
+  <section class="view" id="view-queue" data-view="queue">
+    <div class="statgrid" id="statgrid"></div>
+
+    <div class="section-head">
+      <h2>Render queue</h2>
+      <button class="btn ghost sm" id="btn-new-job">New render</button>
+    </div>
+
+    <div id="joblist" class="stack"></div>
+  </section>
+
+  <!-- ========================== CHANNELS =========================== -->
+  <section class="view" id="view-channels" data-view="channels" hidden>
+    <div class="section-head">
+      <h2>Channels</h2>
+      <button class="btn ghost sm" id="btn-new-channel">Add</button>
+    </div>
+    <p class="lede">Each channel pairs one TikTok creator with one Facebook page, and carries its own edit preset.</p>
+    <div id="channellist" class="stack"></div>
+  </section>
+
+  <!-- ============================ SETUP ============================ -->
+  <section class="view" id="view-setup" data-view="setup" hidden>
+    <div class="section-head"><h2>Setup</h2></div>
+
+    <div class="card pad">
+      <label class="field">
+        <span class="lbl">TikTok cookies file</span>
+        <input type="text" id="set-cookies" placeholder="C:\path\to\cookies.txt" spellcheck="false">
+        <span class="help">TikTok rate-limits repeated downloads. Export cookies.txt from a logged-in browser and point here.</span>
+      </label>
+      <label class="field">
+        <span class="lbl">Output folder</span>
+        <input type="text" id="set-output" spellcheck="false">
+      </label>
+      <button class="btn primary" id="btn-save-settings">Save</button>
+      <p class="saved" id="settings-saved" hidden>Saved</p>
+    </div>
+
+    <div class="card pad">
+      <h3 class="card-title">Machine</h3>
+      <dl class="kv" id="machine"></dl>
+    </div>
+
+    <div class="card pad notice">
+      <h3 class="card-title">Facebook posting</h3>
+      <p>Not connected yet. Renders finish and wait in the queue instead of being posted, so nothing goes out by accident.</p>
+      <p class="fine">The publishing interface is already in place — adding a page token is all that switches it on.</p>
+    </div>
+  </section>
+</main>
+
+<!-- ============================== NAV ============================== -->
+<nav class="tabbar">
+  <button class="tab is-on" data-goto="queue">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M4 12h16M4 18h7"/><circle cx="18" cy="6" r="2.2"/></svg>
+    <span>Queue</span>
+  </button>
+  <button class="tab" data-goto="channels">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5l5 2.5-5 2.5z"/></svg>
+    <span>Channels</span>
+  </button>
+  <button class="tab" data-goto="setup">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/></svg>
+    <span>Setup</span>
+  </button>
+</nav>
+
+<!-- ============================= SHEET ============================= -->
+<div class="scrim" id="scrim" hidden></div>
+
+<div class="sheet" id="sheet-channel" hidden>
+  <div class="grip"></div>
+  <h3 class="sheet-title" id="sheet-channel-title">New channel</h3>
+  <div class="sheet-body">
+    <label class="field">
+      <span class="lbl">Channel name</span>
+      <input type="text" id="ch-name" placeholder="Storytime" autocomplete="off">
+    </label>
+    <label class="field">
+      <span class="lbl">TikTok creator</span>
+      <input type="text" id="ch-tiktok" placeholder="https://www.tiktok.com/@handle" spellcheck="false" autocomplete="off">
+    </label>
+    <label class="field">
+      <span class="lbl">Facebook page</span>
+      <input type="text" id="ch-fbpage" placeholder="Page name" autocomplete="off">
+      <span class="help">Posting stays off until Facebook is connected.</span>
+    </label>
+
+    <div class="split">
+      <label class="field">
+        <span class="lbl">Speed</span>
+        <input type="number" id="ch-speed" step="0.01" min="1" max="1.5" value="1.1">
+      </label>
+      <label class="field">
+        <span class="lbl">Randomise ±</span>
+        <input type="number" id="ch-jitter" step="0.01" min="0" max="0.1" value="0.02">
+      </label>
+    </div>
+
+    <label class="switch">
+      <input type="checkbox" id="ch-captions" checked>
+      <span class="track"><span class="knob"></span></span>
+      <span class="switch-label">Burn in captions</span>
+    </label>
+
+    <label class="field">
+      <span class="lbl">Encoder</span>
+      <select id="ch-encoder">
+        <option value="auto">Auto — GPU when available</option>
+        <option value="nvenc">NVENC (GPU)</option>
+        <option value="x264">x264 (CPU)</option>
+      </select>
+    </label>
+
+    <label class="field">
+      <span class="lbl">Posts per day</span>
+      <input type="number" id="ch-perday" min="1" max="12" value="1">
+    </label>
+  </div>
+  <div class="sheet-actions">
+    <button class="btn ghost" data-close>Cancel</button>
+    <button class="btn primary" id="btn-save-channel">Save channel</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheet-job" hidden>
+  <div class="grip"></div>
+  <h3 class="sheet-title">New render</h3>
+  <div class="sheet-body">
+    <label class="field">
+      <span class="lbl">Channel</span>
+      <select id="job-channel"></select>
+    </label>
+    <label class="field">
+      <span class="lbl">TikTok video URL</span>
+      <input type="text" id="job-url" placeholder="https://www.tiktok.com/@handle/video/…" spellcheck="false" autocomplete="off">
+    </label>
+  </div>
+  <div class="sheet-actions">
+    <button class="btn ghost" data-close>Cancel</button>
+    <button class="btn primary" id="btn-queue-job">Queue render</button>
+  </div>
+</div>
+
+<div class="sheet tall" id="sheet-preview" hidden>
+  <div class="grip"></div>
+  <h3 class="sheet-title" id="preview-title">Render</h3>
+  <div class="sheet-body">
+    <div class="player"><video id="preview-video" controls playsinline preload="metadata"></video></div>
+    <dl class="kv" id="preview-params"></dl>
+  </div>
+  <div class="sheet-actions">
+    <button class="btn ghost" data-close>Close</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
