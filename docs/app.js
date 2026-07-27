@@ -434,7 +434,9 @@ async function refresh() {
       state.channels = state.channels.map((c) => ({ ...c, tiktok: c.tiktok_url, fb_page: c.fb_page_name }));
     }
     renderStats(); renderJobs(); renderChannels();
-    $("#gate").hidden = true;
+    // The public state files load fine without a token, so a successful read is
+    // not proof this device can do anything - only a token is.
+    $("#gate").hidden = MODE === "local" || !!TOKEN;
   } catch (e) {
     if (MODE === "hosted" && !TOKEN) { $("#gate").hidden = false; return; }
     console.error(e);
