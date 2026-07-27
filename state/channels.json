@@ -1,1 +1,15 @@
-{"channels": []}
+{
+    "channels":  [
+                     {
+                         "fb_page":  "Unburied Stories",
+                         "id":  "c1",
+                         "enabled":  1,
+                         "captions":  1,
+                         "per_day":  1,
+                         "jitter":  0.02,
+                         "name":  "Storytime",
+                         "tiktok":  "https://www.tiktok.com/@leeleesstorytime",
+                         "speed":  1.1
+                     }
+                 ]
+}
