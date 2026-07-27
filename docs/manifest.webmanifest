@@ -1,12 +1,17 @@
 {
   "name": "Repost Studio",
   "short_name": "Repost",
-  "start_url": "/",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#07080B",
-  "theme_color": "#07080B",
+  "background_color": "#08090c",
+  "theme_color": "#08090c",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
