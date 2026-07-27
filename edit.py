@@ -122,6 +122,12 @@ def build_filters(ass_path, dur, speed, p):
     v += [
         f"scale={sw}:{sh}:flags=lanczos",
         f"crop={W}:{H}:'{cx}':'{cy}'",
+        # Scaling X and Y by different factors makes ffmpeg record a non-square
+        # SAR to preserve the source's display aspect - which players then undo
+        # on playback, cancelling the squeeze and leaving a file that is 1080
+        # coded but e.g. 1089 displayed (Facebook pads that). Force square
+        # pixels so the squeeze is baked into the pixels instead of metadata.
+        "setsar=1",
         (f"eq=contrast={p['contrast']:.4f}:saturation={p['saturation']:.4f}"
          f":gamma={p['gamma']:.4f}:brightness={p['brightness']:.4f}"),
         (f"curves=r='0/{p['lift_r']:.3f} 0.5/0.5 1/0.995'"
