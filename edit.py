@@ -94,7 +94,16 @@ def build_filters(ass_path, dur, speed, p):
     cx = f"({sw}-{W})/2 + {ax:.1f}*sin(2*PI*t/{p['period_x']:.1f})"
     cy = f"({sh}-{H})/2 + {ay:.1f}*sin(2*PI*t/{p['period_y']:.1f} + {p['phase']:.2f})"
 
-    ass_esc = ass_path.replace("\\", "/").replace(":", r"\:")
+    # Point libass at the bundled font so the caption look does not change
+    # between a Windows PC and a Linux runner.
+    # Windows drive letters need the colon escaped AND the whole value quoted -
+    # an unquoted "C\:/..." parses fine as the first option but not as a later
+    # one, where the parser splits on the ':' before seeing the escape.
+    def esc(pth):
+        return pth.replace("\\", "/").replace(":", r"\:")
+
+    subs = (f"subtitles=filename='{esc(ass_path)}'"
+            f":fontsdir='{esc(os.path.join(HERE, 'fonts'))}'")
 
     v = [f"setpts=PTS/{speed}"]
 
@@ -116,7 +125,7 @@ def build_filters(ass_path, dur, speed, p):
          f":b='0/0 0.5/{p['mid_b']:.3f} 1/1'"),
         f"unsharp=5:5:{p['sharpen']:.2f}:5:5:0.0",
         f"noise=alls={p['grain']}:allf=t",
-        f"subtitles={ass_esc}",
+        subs,
         "fps=30000/1001",          # 30 -> 29.97, a gentle temporal resample
         "format=yuv420p",
     ]
@@ -180,6 +189,10 @@ def render(src, ass, out, p, preset):
         # signature libx264/lavf normally bake into the file
         "-map_metadata", "-1",
         "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact",
+        # bitexact drops the version numbers but ffmpeg still writes an
+        # "encoder=Lavc libx264" tag; clear it and the track handler names too
+        "-metadata:s:v", "encoder=", "-metadata:s:a", "encoder=",
+        "-metadata:s:v", "handler_name=", "-metadata:s:a", "handler_name=",
         "-movflags", "+faststart",
         out,
     ]

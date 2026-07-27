@@ -43,12 +43,16 @@ jobs:
           fi
           ffmpeg -version | head -1
 
-      - name: Install caption font
-        # libass needs a real font on the runner; DejaVu Sans is the closest
-        # always-available stand-in for the Windows "Segoe UI" used locally.
+      - name: Register bundled caption font
+        # fonts/OpenSans-Bold.ttf is committed, so the caption look is identical
+        # on a runner and on a Windows PC. Registering it with fontconfig lets
+        # libass resolve it by family name.
         run: |
-          sudo apt-get install -y -qq fonts-dejavu-core fontconfig
-          fc-list | grep -i dejavu | head -3
+          sudo apt-get install -y -qq fontconfig
+          mkdir -p ~/.local/share/fonts
+          cp fonts/*.ttf ~/.local/share/fonts/
+          fc-cache -f >/dev/null
+          fc-list | grep -i "open sans" | head -3
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -60,8 +64,6 @@ jobs:
           key: whisper-small-v1
 
       - name: Render
-        env:
-          CAPTION_FONT: DejaVu Sans
         run: |
           SEED_ARG=""
           if [ -n "${{ inputs.seed }}" ]; then SEED_ARG="--seed ${{ inputs.seed }}"; fi

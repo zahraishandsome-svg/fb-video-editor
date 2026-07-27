@@ -14,8 +14,9 @@ OUT   = sys.argv[2]
 W, H = 1080, 1920
 
 # ---- CapCut default caption look ----
-# Segoe UI locally; Linux runners have no Segoe, so the workflow passes DejaVu Sans.
-FONT       = os.environ.get("CAPTION_FONT", "Segoe UI")
+# Open Sans Bold ships in fonts/ so Windows and Linux renders are identical.
+# It is also what CapCut's default caption style actually uses.
+FONT       = os.environ.get("CAPTION_FONT", "Open Sans")
 FONT_SIZE  = 58
 OUTLINE    = 3.0            # black stroke
 SHADOW     = 1.2
