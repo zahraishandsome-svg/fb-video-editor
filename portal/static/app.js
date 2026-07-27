@@ -1,6 +1,6 @@
 /* Repost Studio — front end.
-   Single operator, one device at a time, so state lives in the DB and the page
-   just polls. Polling backs off to 6s when nothing is running. */
+   Single operator, so state lives in the DB and the page polls: 1.2s while a
+   render is running, 6s when idle. */
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -35,213 +35,221 @@ const ago = (ts) => {
   if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
   return `${Math.floor(d / 86400)}d ago`;
 };
+const handle = (u) => String(u || "").replace(/^https?:\/\/(www\.)?tiktok\.com\//, "").replace(/\/video\/.*$/, "");
 
-let state = { channels: [], jobs: [], stats: {}, editingChannel: null };
+const state = { channels: [], jobs: [], stats: {}, editing: null, view: "queue" };
 
-/* ------------------------------- toast ------------------------------- */
-let toastTimer;
+/* ─────────────────────────── toast ─────────────────────────── */
+let toastT;
 function toast(msg, bad = false) {
   const t = $("#toast");
   t.textContent = msg;
   t.classList.toggle("bad", bad);
   t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 3200);
+  clearTimeout(toastT);
+  toastT = setTimeout(() => (t.hidden = true), 3200);
 }
 
-/* ------------------------------ routing ------------------------------ */
+/* ─────────────────────────── nav ───────────────────────────── */
+const CRUMB = { queue: "Render queue", channels: "Channels", setup: "Setup" };
+
 function goto(view) {
+  state.view = view;
   $$(".view").forEach((v) => (v.hidden = v.dataset.view !== view));
-  $$(".tab").forEach((t) => t.classList.toggle("is-on", t.dataset.goto === view));
+  $$(".nav[data-goto]").forEach((n) => n.classList.toggle("on", n.dataset.goto === view));
+  $("#crumb").textContent = CRUMB[view] || view;
+  closeDrawer();
   window.scrollTo(0, 0);
 }
-$$(".tab").forEach((t) => t.addEventListener("click", () => goto(t.dataset.goto)));
+document.addEventListener("click", (e) => {
+  const n = e.target.closest(".nav[data-goto]");
+  if (n) goto(n.dataset.goto);
+});
 
-/* ------------------------------ sheets ------------------------------- */
-let openSheet = null;
-function showSheet(id) {
-  openSheet = $(id);
+function openDrawer()  { $("#sb").classList.add("open");  $("#scrim2").classList.add("on"); }
+function closeDrawer() { $("#sb").classList.remove("open"); $("#scrim2").classList.remove("on"); }
+$("#hamb").addEventListener("click", openDrawer);
+$("#scrim2").addEventListener("click", closeDrawer);
+
+addEventListener("scroll", () => $("#tbar").classList.toggle("stuck", scrollY > 4), { passive: true });
+
+/* ────────────────────────── modals ─────────────────────────── */
+let openModal = null;
+function show(id) {
+  openModal = $(id);
   $("#scrim").hidden = false;
-  openSheet.hidden = false;
-  openSheet.classList.remove("closing");
+  openModal.hidden = false;
 }
-function closeSheet() {
-  if (!openSheet) return;
-  const s = openSheet;
-  s.classList.add("closing");
+function close() {
+  if (!openModal) return;
+  const v = $("#pvVideo");
+  if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+  openModal.hidden = true;
   $("#scrim").hidden = true;
-  const v = $("#preview-video");
-  if (v) v.pause();
-  setTimeout(() => { s.hidden = true; s.classList.remove("closing"); }, 240);
-  openSheet = null;
+  openModal = null;
 }
-$("#scrim").addEventListener("click", closeSheet);
-$$("[data-close]").forEach((b) => b.addEventListener("click", closeSheet));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+$("#scrim").addEventListener("click", close);
+document.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) close(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { close(); closeDrawer(); } });
 
-/* ------------------------------ render ------------------------------- */
-const STATUS_LABEL = {
-  queued: "queued", running: "rendering", ready: "ready",
-  posted: "posted", failed: "failed",
+/* ────────────────────────── rendering ──────────────────────── */
+const STAGE = {
+  download: "downloading", transcribe: "captions", render: "rendering", finish: "finishing",
 };
-const STAGE_LABEL = {
-  download: "downloading", transcribe: "transcribing captions", render: "rendering",
-  finish: "finishing",
-};
+const BADGE = { running: "b-run", queued: "b-que", ready: "b-ok", posted: "b-ok", failed: "b-err" };
 
 function renderStats() {
   const s = state.stats;
-  $("#statgrid").innerHTML = [
-    ["channels", s.channels ?? 0, false],
-    ["in queue", s.active ?? 0, (s.active ?? 0) > 0],
-    ["ready", s.ready ?? 0, false],
-    ["failed", s.failed ?? 0, false],
-  ].map(([label, n, on]) =>
-    `<div class="stat${on ? " on" : ""}"><b>${n}</b><span>${label}</span></div>`
-  ).join("");
+  const cells = [
+    ["channels", s.channels ?? 0, "active pairings", ""],
+    ["in queue", s.active ?? 0, (s.active ?? 0) ? "working now" : "nothing waiting", (s.active ?? 0) ? "act" : ""],
+    ["ready", s.ready ?? 0, "waiting to post", (s.ready ?? 0) ? "ok" : ""],
+    ["failed", s.failed ?? 0, (s.failed ?? 0) ? "needs a retry" : "none", (s.failed ?? 0) ? "bad" : ""],
+  ];
+  $("#stats").innerHTML = cells.map(([lb, vl, ft, cls], i) =>
+    `<div class="stat ${cls}" style="animation-delay:${i * 40}ms">
+       <div class="lb">${lb}</div><div class="vl">${vl}</div><div class="ft">${ft}</div>
+     </div>`).join("");
 
-  const active = s.active ?? 0;
-  $("#tally").innerHTML = active
-    ? `<b>${active}</b> RUNNING`
-    : `${s.ready ?? 0} READY`;
+  const busy = (s.active ?? 0) > 0;
+  const running = state.jobs.find((j) => j.status === "running");
+  $("#beat").className = "beat" + (busy ? " busy" : (s.failed ? " err" : ""));
+  $("#beatTxt").textContent = busy
+    ? `${STAGE[running?.stage] || "working"}${running ? " " + Math.round(running.progress) + "%" : ""}`
+    : "idle";
+  $("#sbPip").className = "pip " + (busy ? "a" : "g");
+  $("#sbFoot").textContent = busy ? `${s.active} in queue` : `${s.ready ?? 0} ready to post`;
+  $("#navQueueN").textContent = state.jobs.length || "";
+  $("#navChanN").textContent = state.channels.length || "";
+  $("#jobsN").textContent = state.jobs.length ? `· ${state.jobs.length}` : "";
 }
 
-function jobCard(j) {
-  const st = j.status === "running" ? "running" : j.status;
-  const stageTxt = j.status === "running"
-    ? (STAGE_LABEL[j.stage] || j.stage || "working")
-    : (STATUS_LABEL[j.status] || j.status);
-
+function jobCard(j, i) {
+  const running = j.status === "running";
+  const label = running ? (STAGE[j.stage] || "working") : j.status;
   const thumb = j.thumb
     ? `<img class="thumb" src="/api/jobs/${j.id}/thumb" alt="" loading="lazy">`
-    : `<div class="thumb empty">${j.status === "running" ? "···" : "NO<br>FILE"}</div>`;
+    : `<div class="thumb ph${running ? " load" : ""}">${running ? "" : "NO<br>FILE"}</div>`;
 
-  const meta = [];
-  if (j.duration) meta.push(fmtDur(j.duration));
-  if (j.size_mb) meta.push(`${j.size_mb} MB`);
-  if (j.status === "running") meta.push(`${Math.round(j.progress)}%`);
-  if (j.created_at) meta.push(ago(j.created_at));
+  const mets = [];
+  if (running) mets.push(["progress", Math.round(j.progress) + "%"]);
+  if (j.duration) mets.push(["length", fmtDur(j.duration)]);
+  if (j.size_mb) mets.push(["size", j.size_mb + " MB"]);
+  mets.push(["added", ago(j.created_at)]);
 
-  const actions = [];
-  if (j.out_path) actions.push(`<button class="btn ghost sm" data-preview="${j.id}">Preview</button>`);
-  if (j.status === "failed") actions.push(`<button class="btn ghost sm" data-retry="${j.id}">Retry</button>`);
+  const acts = [];
+  if (j.out_path) acts.push(`<button class="btn" data-preview="${j.id}">
+    <svg viewBox="0 0 24 24"><path d="M9 7l9 5-9 5z"/></svg><span>Preview</span></button>`);
+  if (j.status === "failed") acts.push(`<button class="btn" data-retry="${j.id}">
+    <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.6"/><path d="M20 5v6h-6"/></svg><span>Retry</span></button>`);
 
-  return `
-  <article class="card">
-    <div class="bar" style="width:${j.status === "running" ? j.progress : 0}%"></div>
+  return `<article class="card" style="animation-delay:${Math.min(i, 8) * 35}ms">
+    <div class="rbar" style="width:${running ? j.progress : 0}%"></div>
     <div class="job">
       ${thumb}
-      <div class="job-main">
-        <div class="job-top">
-          <span class="job-name">${esc(j.channel_name || "No channel")}</span>
-          <span class="chip ${st}">${esc(stageTxt)}</span>
+      <div class="jb">
+        <div class="jb-top">
+          <div style="min-width:0">
+            <div class="jb-nm">${esc(j.channel_name || "No channel")}</div>
+            <div class="jb-src">${esc(handle(j.source_url) || j.source_url)}</div>
+          </div>
+          <span class="badge ${BADGE[j.status] || "b-off"}">${esc(label)}</span>
         </div>
-        <div class="job-url">${esc(j.source_url)}</div>
-        <div class="job-meta">${meta.map(esc).join("<span>·</span>")}</div>
+        <div class="mets">${mets.map(([k, v]) =>
+          `<div class="met"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`).join("")}</div>
         ${j.error ? `<div class="err">${esc(j.error)}</div>` : ""}
-        ${actions.length ? `<div class="job-actions">${actions.join("")}</div>` : ""}
+        ${acts.length ? `<div class="jb-foot">${acts.join("")}</div>` : ""}
       </div>
     </div>
   </article>`;
 }
 
 function renderJobs() {
-  const el = $("#joblist");
-  if (!state.jobs.length) {
-    el.innerHTML = `<div class="empty-state">
-      <p>Nothing rendered yet</p>
-      <small>Add a channel, then queue a TikTok URL.</small>
-    </div>`;
-    return;
-  }
-  el.innerHTML = state.jobs.map(jobCard).join("");
+  $("#jobs").innerHTML = state.jobs.length
+    ? state.jobs.map(jobCard).join("")
+    : `<div class="empty"><b>Nothing rendered yet</b><span>Add a channel, then queue a TikTok URL.</span></div>`;
 }
 
-function channelCard(c) {
-  const fb = c.fb_page_name
-    ? esc(c.fb_page_name)
-    : `<span class="off">no page set</span>`;
-  return `
-  <article class="card chan">
-    <div class="chan-head">
-      <div>
-        <div class="chan-name">${esc(c.name)}</div>
-        <div class="route">
-          <span>${esc(c.tiktok_url.replace(/^https?:\/\/(www\.)?tiktok\.com\//, ""))}</span>
-          <span class="arrow">→</span>
-          <span>${fb}</span>
-        </div>
+function chanCard(c, i) {
+  const fb = c.fb_page_name ? esc(c.fb_page_name) : `<span class="none">no page set</span>`;
+  const initial = esc((c.name || "?").trim()[0] || "?").toUpperCase();
+  return `<article class="card ch" style="animation-delay:${Math.min(i, 8) * 35}ms">
+    <div class="ch-top">
+      <div class="ch-av">${initial}</div>
+      <div class="ch-id">
+        <div class="ch-nm">${esc(c.name)}</div>
+        <div class="route"><span>${esc(handle(c.tiktok_url))}</span><span class="ar">&rarr;</span><span>${fb}</span></div>
       </div>
-      <span class="chip ${c.enabled ? "ready" : "queued"}">${c.enabled ? "on" : "paused"}</span>
+      <span class="badge ${c.enabled ? "b-ok" : "b-off"}">${c.enabled ? "on" : "paused"}</span>
     </div>
-    <div class="preset">
-      <span class="tagv">speed <b>${c.speed}×</b> ±${c.jitter}</span>
-      <span class="tagv">captions <b>${c.captions ? "on" : "off"}</b></span>
-      <span class="tagv">${esc(c.encoder)}</span>
-      <span class="tagv"><b>${c.per_day}</b>/day</span>
-      <span class="tagv"><b>${c.job_count ?? 0}</b> renders</span>
+    <div class="tags">
+      <span class="tag">speed <b>${c.speed}&times;</b> &plusmn;${c.jitter}</span>
+      <span class="tag">captions <b>${c.captions ? "on" : "off"}</b></span>
+      <span class="tag">${esc(c.encoder)}</span>
+      <span class="tag"><b>${c.per_day}</b>/day</span>
+      <span class="tag"><b>${c.job_count ?? 0}</b> renders</span>
     </div>
-    <div class="job-actions">
-      <button class="btn ghost sm" data-render="${c.id}">Render a video</button>
-      <button class="btn ghost sm" data-edit="${c.id}">Edit</button>
-      <button class="btn danger sm" data-del="${c.id}">Delete</button>
+    <div class="ch-foot">
+      <button class="btn pri" data-render="${c.id}">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Render a video</span></button>
+      <button class="btn" data-edit="${c.id}">Edit</button>
+      <button class="btn dgr" data-del="${c.id}">Delete</button>
     </div>
   </article>`;
 }
 
 function renderChannels() {
-  const el = $("#channellist");
-  if (!state.channels.length) {
-    el.innerHTML = `<div class="empty-state">
-      <p>No channels yet</p>
-      <small>A channel is one TikTok creator paired with one Facebook page.</small>
-    </div>`;
-    return;
-  }
-  el.innerHTML = state.channels.map(channelCard).join("");
+  $("#channels").innerHTML = state.channels.length
+    ? state.channels.map(chanCard).join("")
+    : `<div class="empty"><b>No channels yet</b><span>A channel is one TikTok creator paired with one Facebook page.</span></div>`;
+
+  $("#sbChannels").innerHTML = state.channels.length
+    ? state.channels.map((c) =>
+        `<button class="nav" data-edit="${c.id}">
+           <span class="pip ${c.enabled ? "g" : "d"}"></span>
+           <span class="nm">${esc(c.name)}</span>
+           <span class="mini">${c.job_count ?? 0}</span>
+         </button>`).join("")
+    : `<div class="sb-foot" style="border:0;padding:6px 9px">none yet</div>`;
 }
 
-/* ------------------------------- data -------------------------------- */
+/* ──────────────────────────── data ─────────────────────────── */
 async function refresh() {
   try {
     const [ov, chans, jobs] = await Promise.all([
       api("/api/overview"), api("/api/channels"), api("/api/jobs?limit=40"),
     ]);
-    state.stats = ov.stats;
-    state.channels = chans;
-    state.jobs = jobs;
+    Object.assign(state, { stats: ov.stats, channels: chans, jobs });
     renderStats(); renderJobs(); renderChannels();
-  } catch (e) {
-    console.error(e);
-  }
+  } catch (e) { console.error(e); }
 }
 
-let pollTimer;
-function schedulePoll() {
-  clearTimeout(pollTimer);
+let pollT;
+function poll() {
+  clearTimeout(pollT);
   const busy = (state.stats.active ?? 0) > 0;
-  pollTimer = setTimeout(async () => { await refresh(); schedulePoll(); }, busy ? 1200 : 6000);
+  pollT = setTimeout(async () => { await refresh(); poll(); }, busy ? 1200 : 6000);
 }
 
-/* ----------------------------- interactions --------------------------- */
+/* ──────────────────────── interactions ─────────────────────── */
 document.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button");
-  if (!btn) return;
+  const b = e.target.closest("button");
+  if (!b) return;
 
-  if (btn.dataset.retry) {
-    await api(`/api/jobs/${btn.dataset.retry}/retry`, { method: "POST" });
-    toast("Queued again"); refresh();
+  if (b.dataset.retry) {
+    await api(`/api/jobs/${b.dataset.retry}/retry`, { method: "POST" });
+    toast("Queued again"); refresh(); poll();
   }
 
-  if (btn.dataset.preview) {
-    const j = state.jobs.find((x) => x.id == btn.dataset.preview);
+  if (b.dataset.preview) {
+    const j = state.jobs.find((x) => x.id == b.dataset.preview);
     if (!j) return;
-    $("#preview-title").textContent = j.channel_name || "Render";
-    $("#preview-video").src = `/api/jobs/${j.id}/video`;
+    $("#pvTitle").textContent = j.channel_name || "Render";
+    $("#pvVideo").src = `/api/jobs/${j.id}/video`;
     let p = {};
     try { p = JSON.parse(j.params || "{}"); } catch {}
-    const rows = [
-      ["Duration", fmtDur(j.duration)],
+    $("#pvParams").innerHTML = [
+      ["Length", fmtDur(j.duration)],
       ["Size", `${j.size_mb} MB`],
       ["Speed", p.speed ? `${p.speed}×` : "—"],
       ["Pitch", p.pitch ? `+${((p.pitch - 1) * 100).toFixed(2)}%` : "—"],
@@ -249,122 +257,106 @@ document.addEventListener("click", async (e) => {
       ["Frame drop", p.drop_every ? `1 in ${p.drop_every}` : "off"],
       ["Encoder", p.encoder || "—"],
       ["Seed", p.seed ?? "—"],
-    ];
-    $("#preview-params").innerHTML = rows
-      .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
-    showSheet("#sheet-preview");
+    ].map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
+    show("#mPreview");
   }
 
-  if (btn.dataset.del) {
-    const c = state.channels.find((x) => x.id == btn.dataset.del);
+  if (b.dataset.del) {
+    const c = state.channels.find((x) => x.id == b.dataset.del);
     if (!confirm(`Delete "${c?.name}"? Existing renders stay on disk.`)) return;
-    await api(`/api/channels/${btn.dataset.del}`, { method: "DELETE" });
+    await api(`/api/channels/${b.dataset.del}`, { method: "DELETE" });
     toast("Channel deleted"); refresh();
   }
 
-  if (btn.dataset.edit) {
-    const c = state.channels.find((x) => x.id == btn.dataset.edit);
-    if (c) openChannelSheet(c);
+  if (b.dataset.edit) {
+    const c = state.channels.find((x) => x.id == b.dataset.edit);
+    if (c) { closeDrawer(); channelModal(c); }
   }
 
-  if (btn.dataset.render) {
-    openJobSheet(Number(btn.dataset.render));
-  }
+  if (b.dataset.render) jobModal(Number(b.dataset.render));
 });
 
-/* ------------------------------ channels ------------------------------ */
-function openChannelSheet(c = null) {
-  state.editingChannel = c?.id ?? null;
-  $("#sheet-channel-title").textContent = c ? "Edit channel" : "New channel";
-  $("#ch-name").value     = c?.name ?? "";
-  $("#ch-tiktok").value   = c?.tiktok_url ?? "";
-  $("#ch-fbpage").value   = c?.fb_page_name ?? "";
-  $("#ch-speed").value    = c?.speed ?? 1.1;
-  $("#ch-jitter").value   = c?.jitter ?? 0.02;
-  $("#ch-captions").checked = c ? !!c.captions : true;
-  $("#ch-encoder").value  = c?.encoder ?? "auto";
-  $("#ch-perday").value   = c?.per_day ?? 1;
-  showSheet("#sheet-channel");
+/* ───────────────────────── channels ────────────────────────── */
+function channelModal(c = null) {
+  state.editing = c?.id ?? null;
+  $("#mChannelTitle").textContent = c ? "Edit channel" : "New channel";
+  $("#chName").value     = c?.name ?? "";
+  $("#chTiktok").value   = c?.tiktok_url ?? "";
+  $("#chFb").value       = c?.fb_page_name ?? "";
+  $("#chSpeed").value    = c?.speed ?? 1.1;
+  $("#chJitter").value   = c?.jitter ?? 0.02;
+  $("#chCaptions").checked = c ? !!c.captions : true;
+  $("#chEncoder").value  = c?.encoder ?? "auto";
+  $("#chPerDay").value   = c?.per_day ?? 1;
+  show("#mChannel");
 }
+$("#btnNewChannel").addEventListener("click", () => channelModal());
 
-$("#btn-new-channel").addEventListener("click", () => openChannelSheet());
-
-$("#btn-save-channel").addEventListener("click", async () => {
+$("#btnSaveChannel").addEventListener("click", async () => {
   const body = {
-    name: $("#ch-name").value.trim(),
-    tiktok_url: $("#ch-tiktok").value.trim(),
-    fb_page_name: $("#ch-fbpage").value.trim(),
-    speed: parseFloat($("#ch-speed").value) || 1.1,
-    jitter: parseFloat($("#ch-jitter").value) || 0,
-    captions: $("#ch-captions").checked ? 1 : 0,
-    encoder: $("#ch-encoder").value,
-    per_day: parseInt($("#ch-perday").value) || 1,
+    name: $("#chName").value.trim(),
+    tiktok_url: $("#chTiktok").value.trim(),
+    fb_page_name: $("#chFb").value.trim(),
+    speed: parseFloat($("#chSpeed").value) || 1.1,
+    jitter: parseFloat($("#chJitter").value) || 0,
+    captions: $("#chCaptions").checked ? 1 : 0,
+    encoder: $("#chEncoder").value,
+    per_day: parseInt($("#chPerDay").value) || 1,
   };
   if (!body.name || !body.tiktok_url) return toast("Name and TikTok link are required", true);
   try {
-    if (state.editingChannel) {
-      await api(`/api/channels/${state.editingChannel}`, { method: "PATCH", body });
+    if (state.editing) {
+      await api(`/api/channels/${state.editing}`, { method: "PATCH", body });
       toast("Channel updated");
     } else {
       await api("/api/channels", { method: "POST", body });
       toast("Channel added");
     }
-    closeSheet(); refresh();
+    close(); refresh();
   } catch (e) { toast(e.message, true); }
 });
 
-/* -------------------------------- jobs -------------------------------- */
-function openJobSheet(channelId = null) {
+/* ─────────────────────────── jobs ──────────────────────────── */
+function jobModal(channelId = null) {
   if (!state.channels.length) { toast("Add a channel first", true); return goto("channels"); }
-  $("#job-channel").innerHTML = state.channels
-    .map((c) => `<option value="${c.id}"${c.id === channelId ? " selected" : ""}>${esc(c.name)}</option>`)
-    .join("");
-  $("#job-url").value = "";
-  showSheet("#sheet-job");
+  $("#jobChannel").innerHTML = state.channels
+    .map((c) => `<option value="${c.id}"${c.id === channelId ? " selected" : ""}>${esc(c.name)}</option>`).join("");
+  $("#jobUrl").value = "";
+  show("#mJob");
 }
+$("#btnNewJob").addEventListener("click", () => jobModal());
 
-$("#btn-new-job").addEventListener("click", () => openJobSheet());
-
-$("#btn-queue-job").addEventListener("click", async () => {
-  const url = $("#job-url").value.trim();
+$("#btnQueueJob").addEventListener("click", async () => {
+  const url = $("#jobUrl").value.trim();
   if (!/tiktok\.com/.test(url)) return toast("Paste a TikTok video link", true);
   try {
-    await api("/api/jobs", {
-      method: "POST",
-      body: { channel_id: Number($("#job-channel").value), url },
-    });
-    closeSheet(); toast("Render queued");
-    goto("queue"); refresh(); schedulePoll();
+    await api("/api/jobs", { method: "POST", body: { channel_id: Number($("#jobChannel").value), url } });
+    close(); toast("Render queued"); goto("queue"); refresh(); poll();
   } catch (e) { toast(e.message, true); }
 });
 
-/* ------------------------------- settings ------------------------------ */
+/* ──────────────────────── settings ─────────────────────────── */
 async function loadSettings() {
   const s = await api("/api/settings");
-  $("#set-cookies").value = s.cookies_path || "";
-  $("#set-output").value = s.output_dir || "";
+  $("#setCookies").value = s.cookies_path || "";
+  $("#setOutput").value = s.output_dir || "";
   $("#machine").innerHTML = [
     ["GPU encoder", s.nvenc ? "NVENC available" : "not available — using CPU"],
     ["Renders saved to", s.output_dir || "—"],
     ["TikTok cookies", s.cookies_path ? "configured" : "not set"],
   ].map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("");
 }
-
-$("#btn-save-settings").addEventListener("click", async () => {
+$("#btnSaveSettings").addEventListener("click", async () => {
   try {
     await api("/api/settings", {
       method: "POST",
-      body: { cookies_path: $("#set-cookies").value.trim(), output_dir: $("#set-output").value.trim() },
+      body: { cookies_path: $("#setCookies").value.trim(), output_dir: $("#setOutput").value.trim() },
     });
-    const n = $("#settings-saved");
+    const n = $("#setSaved");
     n.hidden = false; setTimeout(() => (n.hidden = true), 2000);
     loadSettings();
   } catch (e) { toast(e.message, true); }
 });
 
-/* -------------------------------- boot --------------------------------- */
-(async function boot() {
-  await refresh();
-  await loadSettings();
-  schedulePoll();
-})();
+/* ───────────────────────────  boot ─────────────────────────── */
+(async () => { await refresh(); await loadSettings(); poll(); })();
