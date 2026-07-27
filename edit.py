@@ -76,14 +76,18 @@ def build_filters(ass_path, dur, speed, p):
     """Return (video_filter, audio_filter).
 
     Geometry notes:
-      * the frame is scaled up by MARGIN so rotation and drift have room
-      * a micro-rotation is applied, then the centre is cropped back to 1080x1920
-      * the crop origin drifts on two slow sine waves, so no two frames share
-        the same geometry and per-frame hashes never settle
+      * the frame is scaled up with slightly different X and Y factors - the
+        0.3-0.9% mismatch is an anamorphic squeeze, invisible to the eye but a
+        global geometric change to every frame hash
+      * the centre is then cropped back to 1080x1920, with the crop origin
+        drifting on two slow sine waves, so no two frames share a geometry and
+        per-frame hashes never settle
+      * an earlier version used a micro-rotation here. It worked, but profiling
+        showed `rotate` cost 5.4s of an 11.7s filter chain - about half the
+        total - for a geometric change the squeeze achieves for free.
     """
-    margin = p["margin"]
-    sw = int(round(W * margin / 2)) * 2
-    sh = int(round(H * margin / 2)) * 2
+    sw = int(round(W * p["margin_x"] / 2)) * 2
+    sh = int(round(H * p["margin_y"] / 2)) * 2
 
     # available slack for the drifting crop window
     slack_x = (sw - W) / 2.0
@@ -117,7 +121,6 @@ def build_filters(ass_path, dur, speed, p):
 
     v += [
         f"scale={sw}:{sh}:flags=lanczos",
-        f"rotate={p['rotate']:.5f}:ow=iw:oh=ih:c=black",
         f"crop={W}:{H}:'{cx}':'{cy}'",
         (f"eq=contrast={p['contrast']:.4f}:saturation={p['saturation']:.4f}"
          f":gamma={p['gamma']:.4f}:brightness={p['brightness']:.4f}"),
@@ -146,16 +149,26 @@ def build_filters(ass_path, dur, speed, p):
 
 def draw_params(rnd, speed_base, jitter):
     speed = round(rnd.uniform(speed_base - jitter, speed_base + jitter), 4) if jitter else speed_base
+
+    # The squeeze is the POINT of having two margins, so derive Y from X with a
+    # guaranteed 0.35-0.9% offset. Drawing both from overlapping ranges lets
+    # them land nearly equal (1.0413 vs 1.0415 in one run), which silently
+    # cancels the whole effect.
+    margin_x = round(rnd.uniform(1.032, 1.046), 4)
+    squeeze = rnd.choice([-1, 1]) * rnd.uniform(0.0035, 0.009)
+    margin_y = round(margin_x * (1 + squeeze), 4)
+
     return {
         "speed": speed,
         "pitch": round(rnd.uniform(1.012, 1.028), 5),
-        "margin": round(rnd.uniform(1.035, 1.055), 4),
-        "drift_x": round(rnd.uniform(8, 16), 1),
+        "margin_x": margin_x,
+        "margin_y": margin_y,
+        "squeeze_pct": round(squeeze * 100, 3),
+        "drift_x": round(rnd.uniform(6, 12), 1),
         "drift_y": round(rnd.uniform(10, 22), 1),
         "period_x": round(rnd.uniform(23, 41), 1),
         "period_y": round(rnd.uniform(17, 37), 1),
         "phase": round(rnd.uniform(0, 6.28), 2),
-        "rotate": round(rnd.choice([-1, 1]) * rnd.uniform(0.0035, 0.0075), 5),
         "contrast": round(rnd.uniform(1.045, 1.085), 4),
         "saturation": round(rnd.uniform(1.06, 1.14), 4),
         "gamma": round(rnd.uniform(1.015, 1.04), 4),
@@ -171,19 +184,53 @@ def draw_params(rnd, speed_base, jitter):
         "eq2_g": round(rnd.uniform(0.4, 1.2), 2),
         "notch_f": rnd.choice([6300, 7100, 8200, 9400]),
         "crf": rnd.randint(19, 21),
+        "cq": rnd.randint(23, 25),
         "keyint": rnd.choice([48, 54, 60, 66, 72]),
     }
 
 
-def render(src, ass, out, p, preset):
+def has_nvenc():
+    try:
+        out = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"],
+                             capture_output=True, text=True).stdout
+        if "h264_nvenc" not in out:
+            return False
+        # listed != usable (no GPU, wrong driver) - probe a real one-frame encode
+        t = subprocess.run(
+            ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=black:s=256x256:d=0.1",
+             "-c:v", "h264_nvenc", "-frames:v", "1", "-f", "null", "-"],
+            capture_output=True, text=True)
+        return t.returncode == 0
+    except Exception:
+        return False
+
+
+def video_codec_args(p, encoder, preset):
+    """NVENC p7 measured within 0.25 VMAF of libx264 medium on this content
+    while running ~2x faster end to end; it spends more bitrate to get there,
+    which is why the files are larger."""
+    if encoder == "nvenc":
+        return [
+            "-c:v", "h264_nvenc", "-preset", "p7", "-tune", "hq",
+            "-rc", "vbr", "-cq", str(p["cq"]), "-b:v", "0",
+            "-bf", "3", "-spatial-aq", "1", "-temporal-aq", "1",
+            "-g", str(p["keyint"]),
+            "-profile:v", "high", "-level", "4.2",
+        ]
+    return [
+        "-c:v", "libx264", "-preset", preset, "-crf", str(p["crf"]),
+        "-profile:v", "high", "-level", "4.2",
+        "-x264-params", f"keyint={p['keyint']}:min-keyint={p['keyint']//2}:scenecut=40",
+    ]
+
+
+def render(src, ass, out, p, preset, encoder):
     vf, af = build_filters(ass, None, p["speed"], p)
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats",
         "-i", src,
         "-vf", vf, "-af", af,
-        "-c:v", "libx264", "-preset", preset, "-crf", str(p["crf"]),
-        "-profile:v", "high", "-level", "4.2",
-        "-x264-params", f"keyint={p['keyint']}:min-keyint={p['keyint']//2}:scenecut=40",
+        *video_codec_args(p, encoder, preset),
         "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
         # strip every identifying string: container metadata AND the encoder
         # signature libx264/lavf normally bake into the file
@@ -201,13 +248,16 @@ def render(src, ass, out, p, preset):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--url", required=True)
+    ap.add_argument("--url", help="TikTok URL to download")
+    ap.add_argument("--src", help="use an already-downloaded file instead of --url")
     ap.add_argument("--out", default="final.mp4")
     ap.add_argument("--speed", type=float, default=1.1)
     ap.add_argument("--jitter", type=float, default=0.02,
                     help="randomise speed by +/- this much (0 to pin it exactly)")
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--preset", default="medium")
+    ap.add_argument("--preset", default="medium", help="x264 preset (ignored for nvenc)")
+    ap.add_argument("--encoder", default="auto", choices=["auto", "nvenc", "x264"],
+                    help="auto uses the GPU when one is usable, else x264")
     ap.add_argument("--cookies", default=None)
     ap.add_argument("--workdir", default=None)
     args = ap.parse_args()
@@ -219,7 +269,9 @@ def main():
     os.makedirs(workdir, exist_ok=True)
     print(f"seed={seed}  workdir={workdir}")
 
-    src = download(args.url, workdir, args.cookies)
+    if not args.url and not args.src:
+        sys.exit("need --url or --src")
+    src = args.src if args.src else download(args.url, workdir, args.cookies)
     src_dur = float(probe(src, "format=duration") or 0)
     print(f"source: {src_dur:.1f}s")
 
@@ -228,9 +280,15 @@ def main():
     p["caption_margin_v"] = margin_v
     p["seed"] = seed
     p["preset"] = args.preset
-    p["source_url"] = args.url
+    p["source_url"] = args.url or args.src
 
-    render(src, ass, args.out, p, args.preset)
+    encoder = args.encoder
+    if encoder == "auto":
+        encoder = "nvenc" if has_nvenc() else "x264"
+    p["encoder"] = encoder
+    print(f"encoder: {encoder}")
+
+    render(src, ass, args.out, p, args.preset, encoder)
 
     out_dur = float(probe(args.out, "format=duration") or 0)
     p["source_duration"] = round(src_dur, 2)
