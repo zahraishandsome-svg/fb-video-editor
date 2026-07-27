@@ -1,0 +1,95 @@
+name: Render video
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "TikTok video URL"
+        required: true
+      speed:
+        description: "Base speed (default 1.1)"
+        required: false
+        default: "1.1"
+      jitter:
+        description: "Randomise speed by +/- this (0 = exact)"
+        required: false
+        default: "0.02"
+      seed:
+        description: "Seed (blank = random each run)"
+        required: false
+        default: ""
+      preset:
+        description: "x264 preset"
+        required: false
+        default: "medium"
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install ffmpeg
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
+          ffmpeg -version | head -1
+
+      - name: Install caption font
+        # libass needs a real font on the runner; DejaVu Sans is the closest
+        # always-available stand-in for the Windows "Segoe UI" used locally.
+        run: |
+          sudo apt-get install -y -qq fonts-dejavu-core fontconfig
+          fc-list | grep -i dejavu | head -3
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-v1
+
+      - name: Render
+        env:
+          CAPTION_FONT: DejaVu Sans
+        run: |
+          SEED_ARG=""
+          if [ -n "${{ inputs.seed }}" ]; then SEED_ARG="--seed ${{ inputs.seed }}"; fi
+          python edit.py \
+            --url "${{ inputs.url }}" \
+            --out output.mp4 \
+            --speed "${{ inputs.speed }}" \
+            --jitter "${{ inputs.jitter }}" \
+            --preset "${{ inputs.preset }}" \
+            $SEED_ARG
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f output.mp4.params.json ]; then
+            echo '### Render parameters' >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat output.mp4.params.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          ls -lh output.mp4 || true
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-video
+          path: |
+            output.mp4
+            output.mp4.params.json
+          retention-days: 7

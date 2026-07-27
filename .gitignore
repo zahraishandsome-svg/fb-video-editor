@@ -1,0 +1,7 @@
+work/
+*.mp4
+*.png
+*.wav
+*.ass
+*.params.json
+__pycache__/

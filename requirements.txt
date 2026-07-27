@@ -1,0 +1,2 @@
+yt-dlp>=2026.07.04
+faster-whisper>=1.2.1
